@@ -1,14 +1,23 @@
+// backend/http-functions.js
 import { ok, serverError } from 'wix-http-functions';
-import { uploadData } from 'backend/uploadData';
 
-export async function post_uploadData(request) {
+// Example API endpoint: https://www.forgedbyfreedom.com/_functions/getData
+export async function get_getData(request) {
   try {
-    const body = await request.body.json();
-    const { fileName, fileContent } = body;
-    const result = await uploadData(fileName, fileContent);
-    return ok(result);
+    const response = await fetch(
+      'https://raw.githubusercontent.com/forgedbyfreedom/fbf-data/main/combined.json'
+    );
+    if (!response.ok) throw new Error('Failed to fetch data from GitHub');
+    const data = await response.json();
+
+    return ok({
+      headers: { 'Content-Type': 'application/json' },
+      body: data,
+    });
   } catch (err) {
-    return serverError({ error: err.message });
+    return serverError({
+      headers: { 'Content-Type': 'application/json' },
+      body: { error: err.message },
+    });
   }
 }
-
