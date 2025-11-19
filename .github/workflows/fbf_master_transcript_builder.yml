@@ -32,7 +32,7 @@ jobs:
           mkdir -p transcripts_fetched
           find . -type f -name "*.txt" -not -path "./transcripts_fetched/*" -exec cp {} transcripts_fetched/ \;
           echo "✅ Copied transcript files:"
-          ls -l transcripts_fetched || echo "No transcripts found."
+          ls -l transcripts_fetched || echo "⚠️ No transcripts found."
 
       - name: Build master transcript bundle
         run: |
@@ -65,6 +65,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          echo "📤 Checking for OpenAI API key..."
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "⚠️ No OpenAI API key found. Skipping upload."
             exit 0
