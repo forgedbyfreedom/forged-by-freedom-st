@@ -56,17 +56,22 @@ jobs:
           git commit -m "Auto-combined transcripts [skip ci]" || echo "ℹ️ No changes to commit"
           git push origin main
 
-      - name: (Optional) Upload to OpenAI
-        if: ${{ secrets.OPENAI_API_KEY != '' }}
+      - name: Upload to OpenAI (if key exists)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        if: ${{ env.OPENAI_API_KEY != '' }}
         run: |
           echo "📤 Uploading combined transcript to OpenAI..."
           python3 - <<'PYCODE'
           import os
           from openai import OpenAI
 
-          client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+          key = os.environ.get("OPENAI_API_KEY")
+          if not key:
+              print("⚠️ No OpenAI key set — skipping upload.")
+              raise SystemExit(0)
+
+          client = OpenAI(api_key=key)
           path = "transcripts/master_transcript_combined.txt"
 
           if os.path.exists(path):
