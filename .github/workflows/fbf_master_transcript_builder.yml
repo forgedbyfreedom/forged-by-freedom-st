@@ -30,20 +30,21 @@ jobs:
         run: |
           echo "📡 Starting auto-discovery transcript sync..."
           mkdir -p transcripts_fetched
-
-          # Find all .txt files in repo (deep scan)
           find . -type f -name "*.txt" -not -path "./transcripts_fetched/*" -exec cp {} transcripts_fetched/ \;
-
           echo "✅ Copied transcript files:"
-          ls -l transcripts_fetched
+          ls -l transcripts_fetched || echo "No transcripts found."
 
       - name: Build master transcript bundle
         run: |
           echo "📘 Building master transcript bundle..."
           mkdir -p build_output
-          cat transcripts_fetched/*.txt > build_output/master_transcript_combined.txt
-          echo "✅ Combined transcript file size:"
-          du -h build_output/master_transcript_combined.txt
+          if ls transcripts_fetched/*.txt 1> /dev/null 2>&1; then
+            cat transcripts_fetched/*.txt > build_output/master_transcript_combined.txt
+            echo "✅ Combined transcript file size:"
+            du -h build_output/master_transcript_combined.txt
+          else
+            echo "⚠️ No transcript files found. Skipping combine."
+          fi
 
       - name: Commit and push updated transcripts
         run: |
@@ -51,21 +52,25 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p transcripts
-          cp build_output/master_transcript_combined.txt transcripts/master_transcript_combined.txt
-          git add transcripts/master_transcript_combined.txt
-          git commit -m "Auto-combined transcripts [skip ci]" || echo "ℹ️ No changes to commit"
-          git push origin main
+          if [ -f build_output/master_transcript_combined.txt ]; then
+            cp build_output/master_transcript_combined.txt transcripts/master_transcript_combined.txt
+            git add transcripts/master_transcript_combined.txt
+            git commit -m "Auto-combined transcripts [skip ci]" || echo "ℹ️ No changes to commit"
+            git push origin main
+          else
+            echo "⚠️ No combined transcript to commit."
+          fi
 
-      - name: Upload to OpenAI (if key exists)
+      - name: Upload to OpenAI (optional)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "📤 Uploading combined transcript to OpenAI..."
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "⚠️ No OpenAI API key found. Skipping upload."
             exit 0
           fi
 
+          echo "📤 Uploading combined transcript to OpenAI..."
           python3 - <<'PYCODE'
           import os
           from openai import OpenAI
@@ -80,4 +85,8 @@ jobs:
 
           if os.path.exists(path):
               with open(path, "rb") as f:
-                  client.files.create(file=f, purpose
+                  client.files.create(file=f, purpose="assistants")
+              print("✅ Uploaded master transcript to OpenAI.")
+          else:
+              print("⚠️ Combined transcript not found — skipping upload.")
+          PYCODE
