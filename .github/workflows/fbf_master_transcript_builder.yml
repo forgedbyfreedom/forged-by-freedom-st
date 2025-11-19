@@ -59,9 +59,13 @@ jobs:
       - name: Upload to OpenAI (if key exists)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        if: ${{ env.OPENAI_API_KEY != '' }}
         run: |
           echo "📤 Uploading combined transcript to OpenAI..."
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "⚠️ No OpenAI API key found. Skipping upload."
+            exit 0
+          fi
+
           python3 - <<'PYCODE'
           import os
           from openai import OpenAI
@@ -76,8 +80,4 @@ jobs:
 
           if os.path.exists(path):
               with open(path, "rb") as f:
-                  client.files.create(file=f, purpose="assistants")
-              print("✅ Uploaded master transcript to OpenAI.")
-          else:
-              print("⚠️ Combined transcript not found.")
-          PYCODE
+                  client.files.create(file=f, purpose
