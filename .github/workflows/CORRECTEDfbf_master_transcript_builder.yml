@@ -1,9 +1,9 @@
-name: FBF Master Transcript Builder
+name: FBF Auto Transcript Rebuild
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *"  # every 6 hours
 
 permissions:
   contents: write
@@ -26,46 +26,43 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests openai beautifulsoup4
 
-      - name: Auto-discover and sync transcripts
+      - name: Sync and combine transcripts
         run: |
-          echo "📡 Starting transcript sync..."
+          echo "📡 Fetching transcript text files..."
           mkdir -p transcripts_fetched
           find . -type f -name "*.txt" -not -path "./transcripts_fetched/*" -exec cp {} transcripts_fetched/ \;
-          echo "✅ Copied transcript files:"
-          ls -l transcripts_fetched || echo "⚠️ No transcripts found."
+          echo "✅ Found transcript files:"
+          ls -l transcripts_fetched || echo "⚠️ None found."
 
-      - name: Build master transcript bundle
-        run: |
-          echo "📘 Building master transcript bundle..."
+          echo "📘 Combining transcripts..."
           mkdir -p build_output
           if ls transcripts_fetched/*.txt 1> /dev/null 2>&1; then
             cat transcripts_fetched/*.txt > build_output/master_transcript_combined.txt
-            echo "✅ Combined transcript file size:"
-            du -h build_output/master_transcript_combined.txt
+            echo "✅ Combined transcript file built."
           else
-            echo "⚠️ No transcript files found. Skipping combine."
+            echo "⚠️ No transcript files to combine."
           fi
 
-      - name: Commit and push updated transcripts
+      - name: Commit and push updates
         run: |
-          echo "💾 Committing new combined transcript..."
+          echo "💾 Committing updates..."
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p transcripts
           if [ -f build_output/master_transcript_combined.txt ]; then
             cp build_output/master_transcript_combined.txt transcripts/master_transcript_combined.txt
             git add transcripts/master_transcript_combined.txt
-            git commit -m "Auto-combined transcripts [skip ci]" || echo "ℹ️ No changes to commit"
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "ℹ️ No changes."
             git push origin main
-          else
-            echo "⚠️ No combined transcript to commit."
           fi
 
-      - name: Upload to OpenAI (optional)
+      - name: Upload to OpenAI
+        env:
+          OPENAI_API_KEY: ${{ github.token }}
         run: |
-          echo "📤 Uploading combined transcript to OpenAI..."
+          echo "📤 Preparing upload..."
           if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "⚠️ No OpenAI API key found — skipping upload."
+            echo "⚠️ Missing OpenAI API key — skipping upload."
             exit 0
           fi
 
@@ -75,7 +72,7 @@ jobs:
 
           key = os.getenv("OPENAI_API_KEY")
           if not key:
-              print("⚠️ No OpenAI key set — skipping upload.")
+              print("⚠️ No API key detected — skipping.")
               raise SystemExit(0)
 
           client = OpenAI(api_key=key)
@@ -84,7 +81,7 @@ jobs:
           if os.path.exists(path):
               with open(path, "rb") as f:
                   client.files.create(file=f, purpose="assistants")
-              print("✅ Uploaded master transcript to OpenAI.")
+              print("✅ Upload complete.")
           else:
-              print("⚠️ Combined transcript not found — skipping upload.")
+              print("⚠️ No transcript to upload.")
           PYCODE
