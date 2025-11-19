@@ -1,7 +1,7 @@
 name: Fetch and Build Master Transcripts
 
 on:
-  workflow_dispatch:     # manual trigger from GitHub UI
+  workflow_dispatch:
   schedule:
     - cron: "0 */6 * * *"  # every 6 hours
 
@@ -62,32 +62,24 @@ jobs:
           fi
 
       - name: Upload to OpenAI (optional)
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "📤 Checking for OpenAI API key..."
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "⚠️ No OpenAI API key found. Skipping upload."
-            exit 0
-          fi
-
           echo "📤 Uploading combined transcript to OpenAI..."
           python3 - <<'PYCODE'
-          import os
+          import os, sys
           from openai import OpenAI
 
-          key = os.environ.get("OPENAI_API_KEY")
+          key = os.getenv("OPENAI_API_KEY")
           if not key:
-              print("⚠️ No OpenAI key set — skipping upload.")
-              raise SystemExit(0)
+              print("⚠️ No OpenAI API key found in environment — skipping upload.")
+              sys.exit(0)
 
           client = OpenAI(api_key=key)
           path = "transcripts/master_transcript_combined.txt"
-
-          if os.path.exists(path):
-              with open(path, "rb") as f:
-                  client.files.create(file=f, purpose="assistants")
-              print("✅ Uploaded master transcript to OpenAI.")
-          else:
+          if not os.path.exists(path):
               print("⚠️ Combined transcript not found — skipping upload.")
+              sys.exit(0)
+
+          with open(path, "rb") as f:
+              client.files.create(file=f, purpose="assistants")
+          print("✅ Uploaded master transcript to OpenAI.")
           PYCODE
