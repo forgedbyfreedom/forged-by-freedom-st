@@ -1,0 +1,29 @@
+name: Export Transcripts for FBF Engine
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"  # runs daily at 6 AM UTC
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create public export folder
+        run: |
+          mkdir -p public_transcripts
+          find . -type f -name "*.txt" -exec cp {} public_transcripts/ \;
+          echo "📦 Collected transcript files:"
+          ls public_transcripts
+
+      - name: Upload to GitHub Pages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcripts
+          path: public_transcripts/
