@@ -1,9 +1,9 @@
-name: Fetch and Build Master Transcripts
+name: FBF Master Transcript Builder
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # every 6 hours
+    - cron: "0 */6 * * *"
 
 permissions:
   contents: write
@@ -28,7 +28,7 @@ jobs:
 
       - name: Auto-discover and sync transcripts
         run: |
-          echo "📡 Starting auto-discovery transcript sync..."
+          echo "📡 Starting transcript sync..."
           mkdir -p transcripts_fetched
           find . -type f -name "*.txt" -not -path "./transcripts_fetched/*" -exec cp {} transcripts_fetched/ \;
           echo "✅ Copied transcript files:"
@@ -64,22 +64,27 @@ jobs:
       - name: Upload to OpenAI (optional)
         run: |
           echo "📤 Uploading combined transcript to OpenAI..."
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "⚠️ No OpenAI API key found — skipping upload."
+            exit 0
+          fi
+
           python3 - <<'PYCODE'
-          import os, sys
+          import os
           from openai import OpenAI
 
           key = os.getenv("OPENAI_API_KEY")
           if not key:
-              print("⚠️ No OpenAI API key found in environment — skipping upload.")
-              sys.exit(0)
+              print("⚠️ No OpenAI key set — skipping upload.")
+              raise SystemExit(0)
 
           client = OpenAI(api_key=key)
           path = "transcripts/master_transcript_combined.txt"
-          if not os.path.exists(path):
-              print("⚠️ Combined transcript not found — skipping upload.")
-              sys.exit(0)
 
-          with open(path, "rb") as f:
-              client.files.create(file=f, purpose="assistants")
-          print("✅ Uploaded master transcript to OpenAI.")
+          if os.path.exists(path):
+              with open(path, "rb") as f:
+                  client.files.create(file=f, purpose="assistants")
+              print("✅ Uploaded master transcript to OpenAI.")
+          else:
+              print("⚠️ Combined transcript not found — skipping upload.")
           PYCODE
