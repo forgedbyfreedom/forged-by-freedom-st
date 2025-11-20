@@ -1,12 +1,13 @@
-name: Build and Upload Master Transcripts
+name: Build and Upload Master Transcripts (Dual Repo)
 
 on:
   push:
     branches: [ main ]
     paths:
       - "transcripts/**"
-      - "backend/**"
       - ".github/workflows/fbf_master_transcript_builder.yml"
+  schedule:
+    - cron: "0 */6 * * *"  # every 6 hours
 
 jobs:
   build:
@@ -17,8 +18,15 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout main repo (forged-by-freedom-st)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Clone thinkbig-transcripts repo
+        run: |
+          echo "📦 Cloning thinkbig-transcripts..."
+          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,24 +38,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests openai beautifulsoup4
 
-      - name: Combine transcripts
+      - name: Combine transcripts from both repos
         run: |
           echo "📘 Combining transcripts..."
           mkdir -p build
-          find transcripts -type f -name "*.txt" -exec cat {} + > build/master_transcript.txt
-          wc -l build/master_transcript.txt || true
+          find transcripts -type f -name "*.txt" > /tmp/list_main.txt
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" > /tmp/list_thinkbig.txt
+          cat /tmp/list_main.txt /tmp/list_thinkbig.txt > /tmp/all_files.txt
+          cat $(cat /tmp/all_files.txt) > build/master_transcript.txt
+          echo "✅ Combined $(wc -l < /tmp/all_files.txt) transcript files total."
+          wc -c build/master_transcript.txt
 
       - name: Upload to OpenAI
         run: |
-          echo "📤 Preparing upload..."
+          echo "📤 Uploading master_transcript.txt..."
           python - <<'EOF'
-          import os, openai, glob
+          import os, openai
           key = os.getenv("OPENAI_API_KEY")
           if not key:
               raise ValueError("❌ Missing OpenAI API Key in Secrets.")
           client = openai.OpenAI(api_key=key)
           file_path = "build/master_transcript.txt"
-          print(f"Uploading {file_path}...")
           with open(file_path, "rb") as f:
               resp = client.files.create(file=f, purpose="assistants")
           print("✅ Upload complete:", resp.id)
@@ -58,5 +69,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build/master_transcript.txt
-          git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes"
+          git commit -m "Auto rebuild master transcript [skip ci]" || echo "No changes"
           git push origin main || echo "No push needed"
