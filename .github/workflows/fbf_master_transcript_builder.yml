@@ -13,30 +13,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout current repo
+      - name: 🧩 Checkout main repo
         uses: actions/checkout@v4
 
-      - name: 📦 Clone thinkbig-transcripts repo
-        run: |
-          echo "📦 Cloning thinkbig-transcripts..."
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
-          echo "✅ Clone complete."
-
-      - name: 🧩 Combine transcripts into master file
-        run: |
-          mkdir -p transcripts
-          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt
-          echo "🧾 Master transcript built with $(wc -l < transcripts/master_transcript.txt) lines."
-
-      - name: 🗂️ Commit and push changes
+      - name: 🔧 Setup Git credentials
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add transcripts/master_transcript.txt
-          git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes to commit."
-          git push origin main
 
-      - name: 📤 Upload master transcript artifact
+      - name: 📦 Clone thinkbig-transcripts repo
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📦 Cloning thinkbig-transcripts..."
+          git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
+            echo "❌ Clone failed on first try, retrying in 10 seconds..." && sleep 10 &&
+            git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
+          )
+          echo "✅ Clone complete."
+          ls -lah /tmp/thinkbig-transcripts | head
+
+      - name: 🧠 Combine transcripts into master file
+        run: |
+          mkdir -p transcripts
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt
+          echo "✅ Master transcript built."
+          echo "📏 Line count:"
+          wc -l transcripts/master_transcript.txt
+
+      - name: 🗂️ Commit and push transcript updates
+        run: |
+          if [ -s transcripts/master_transcript.txt ]; then
+            git add transcripts/master_transcript.txt
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes to commit."
+            git push origin main
+            echo "✅ Changes pushed to main branch."
+          else
+            echo "⚠️ No transcript data found — skipping commit."
+          fi
+
+      - name: 📤 Upload transcript artifact
         uses: actions/upload-artifact@v4
         with:
           name: master_transcript
