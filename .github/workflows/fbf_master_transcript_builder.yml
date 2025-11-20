@@ -1,9 +1,9 @@
-name: Build and Upload Master Transcripts (Dual Repo)
+name: Build and Upload Master Transcripts (Fixed Auth)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # Runs daily at 6 AM UTC
+    - cron: "0 6 * * *"  # Daily 6 AM UTC
 
 permissions:
   contents: write
@@ -11,9 +11,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.FBF_PAT }}
 
     steps:
-      - name: 🧩 Checkout FBF main repo
+      - name: 🧩 Checkout main repo (forged-by-freedom-st)
         uses: actions/checkout@v4
 
       - name: 🔧 Setup Git identity
@@ -21,54 +23,47 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 🔍 Debug token visibility
+      - name: 🔐 Verify token setup
         run: |
-          if [ -z "${{ secrets.FBF_PAT }}" ]; then
-            echo "❌ FBF_PAT secret not found or empty!"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "❌ Token missing! Please add FBF_PAT in repo secrets."
+            exit 1
           else
-            echo "✅ FBF_PAT exists (length check):"
-            echo "${{ secrets.FBF_PAT }}" | wc -c
+            echo "✅ Token length check:"
+            echo "$GH_TOKEN" | wc -c
           fi
 
-      - name: 🔐 Inject PAT into Git credential helper
+      - name: ⚙️ Inject credentials for same-account access
         run: |
-          echo "🔐 Configuring Git credentials for thinkbig-transcripts..."
+          echo "machine github.com login forgedbyfreedom password $GH_TOKEN" > ~/.netrc
+          chmod 600 ~/.netrc
           git config --global credential.helper store
-          echo "https://x-access-token:${{ secrets.FBF_PAT }}@github.com" > ~/.git-credentials
-          cat ~/.git-credentials | sed 's/.\{10\}$/********/' || true
-          echo "✅ Git credentials injected."
+          echo "✅ Credential injection complete"
+          cat ~/.netrc | sed 's/password.*/password ********/'
 
-      - name: 📦 Clone thinkbig-transcripts repo (using stored creds)
+      - name: 📦 Clone thinkbig-transcripts repo (authenticated)
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
-          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
-            echo "⚠️ Clone failed, retrying..." && sleep 10 &&
-            git clone https://github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
-          )
-
-          if [ ! -d "/tmp/thinkbig-transcripts" ]; then
-            echo "❌ Failed to clone thinkbig-transcripts after retries."
-            exit 1
-          fi
-          echo "✅ Clone complete."
+          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts
+          echo "✅ Clone complete"
           ls -lah /tmp/thinkbig-transcripts | head
 
       - name: 🧠 Combine transcripts into master file
         run: |
           mkdir -p transcripts
           find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
-          echo "✅ Master transcript built."
-          wc -l transcripts/master_transcript.txt || echo "⚠️ No transcript lines found."
+          echo "✅ Master transcript built"
+          wc -l transcripts/master_transcript.txt || echo "⚠️ No transcript lines found"
 
-      - name: 🗂️ Commit and push transcript updates
+      - name: 🗂️ Commit and push updates
         run: |
           if [ -s transcripts/master_transcript.txt ]; then
             git add transcripts/master_transcript.txt
-            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes to commit."
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes"
             git push origin main
-            echo "✅ Changes pushed to main branch."
+            echo "✅ Changes pushed"
           else
-            echo "⚠️ No transcript data found — skipping commit."
+            echo "⚠️ No transcript data found — skipping commit"
           fi
 
       - name: 📤 Upload master transcript artifact
