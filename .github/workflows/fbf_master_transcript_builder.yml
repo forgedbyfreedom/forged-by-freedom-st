@@ -1,4 +1,4 @@
-name: Build and Upload Master Transcripts (Final Inline Auth Fix)
+name: Build and Upload Master Transcripts (Classic PAT Auth)
 
 on:
   workflow_dispatch:
@@ -16,42 +16,40 @@ jobs:
       GH_PAT: ${{ secrets.FBF_PAT }}
 
     steps:
-      - name: 🧩 Checkout main repo (forged-by-freedom-st)
+      - name: 🧩 Checkout main repo
         uses: actions/checkout@v4
 
-      - name: 🔧 Configure Git identity
+      - name: 🔧 Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 🔐 Verify token
+      - name: 🔐 Validate token
         run: |
           if [ -z "$GH_PAT" ]; then
-            echo "❌ Missing token secret (FBF_PAT)."
+            echo "❌ No token found in secrets."
             exit 1
-          else
-            echo "✅ Token present. Length:"
-            echo "$GH_PAT" | wc -c
           fi
+          echo "✅ Token present. Length: $(echo $GH_PAT | wc -c)"
 
-      - name: 📦 Clone thinkbig-transcripts (authenticated)
+      - name: 📦 Clone thinkbig-transcripts (Classic PAT)
         run: |
-          echo "📦 Cloning thinkbig-transcripts..."
+          echo "📦 Cloning thinkbig-transcripts with classic token..."
           git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts || (
-            echo "⚠️ Retry clone..." && sleep 5 &&
+            echo "⚠️ Retry cloning..." && sleep 5 &&
             git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts
           )
-          echo "✅ thinkbig-transcripts cloned successfully."
+          echo "✅ Clone successful."
           ls -lah /tmp/thinkbig-transcripts | head
 
-      - name: 🧠 Build master transcript
+      - name: 🧠 Combine transcripts
         run: |
           mkdir -p transcripts
           find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
           echo "✅ Master transcript built."
           wc -l transcripts/master_transcript.txt || echo "⚠️ Empty transcript file."
 
-      - name: 🗂️ Commit and push master transcript
+      - name: 🗂️ Commit and push updates
         run: |
           if [ -s transcripts/master_transcript.txt ]; then
             git add transcripts/master_transcript.txt
@@ -59,7 +57,7 @@ jobs:
             git push origin main
             echo "✅ Master transcript pushed to main."
           else
-            echo "⚠️ No content — skipping commit."
+            echo "⚠️ No content found — skipping commit."
           fi
 
       - name: 📤 Upload artifact
