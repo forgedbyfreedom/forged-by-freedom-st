@@ -1,4 +1,4 @@
-name: Build and Upload Master Transcripts (Dual Repo, Final Fix)
+name: Build and Upload Master Transcripts (Final Auth Fix)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_USER: forgedbyfreedom
+      GH_PAT: ${{ secrets.FBF_PAT }}
 
     steps:
       - name: 🧩 Checkout main repo (forged-by-freedom-st)
@@ -20,34 +21,40 @@ jobs:
         with:
           token: ${{ secrets.FBF_PAT }}
 
-      - name: 📦 Checkout thinkbig-transcripts repo
-        uses: actions/checkout@v4
-        with:
-          repository: forgedbyfreedom/thinkbig-transcripts
-          token: ${{ secrets.FBF_PAT }}
-          path: thinkbig-transcripts
+      - name: 🔐 Validate token
+        run: |
+          if [ -z "$GH_PAT" ]; then
+            echo "❌ No token found."
+            exit 1
+          fi
+          echo "✅ Token found (length: $(echo $GH_PAT | wc -c))"
 
-      - name: 🔧 Configure Git
+      - name: 📦 Clone thinkbig-transcripts with explicit auth
+        run: |
+          echo "📦 Cloning thinkbig-transcripts..."
+          git -c http.extraheader="AUTHORIZATION: basic $(echo -n $GH_USER:$GH_PAT | base64)" \
+            clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts
+          echo "✅ Repo cloned."
+          ls -lah /tmp/thinkbig-transcripts | head
+
+      - name: 🧠 Build combined master transcript
+        run: |
+          mkdir -p transcripts
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
+          echo "✅ Combined transcript built."
+          wc -l transcripts/master_transcript.txt || echo "⚠️ Empty transcript."
+
+      - name: 🗂️ Commit and push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: 🧠 Combine transcript files
-        run: |
-          mkdir -p transcripts
-          find thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
-          echo "✅ Master transcript built."
-          wc -l transcripts/master_transcript.txt || echo "⚠️ Empty transcript file."
-
-      - name: 🗂️ Commit and push updates
-        run: |
           if [ -s transcripts/master_transcript.txt ]; then
             git add transcripts/master_transcript.txt
-            git commit -m "Auto rebuild master transcript [skip ci]" || echo "No changes."
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes."
             git push origin main
             echo "✅ Master transcript pushed to main."
           else
-            echo "⚠️ No content found — skipping commit."
+            echo "⚠️ Nothing to push."
           fi
 
       - name: 📤 Upload transcript artifact
