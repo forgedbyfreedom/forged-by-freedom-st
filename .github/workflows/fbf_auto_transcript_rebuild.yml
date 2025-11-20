@@ -1,9 +1,9 @@
-name: FBF Auto Transcript Rebuild
+name: Build and Upload Master Transcripts (Full Auth Debug Fix)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # every 6 hours
+    - cron: "0 6 * * *" # runs daily at 6 AM UTC
 
 permissions:
   contents: write
@@ -11,77 +11,64 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GH_USER: forgedbyfreedom
+      GH_PAT: ${{ secrets.FBF_PAT }}
 
     steps:
-      - name: Checkout repository
+      - name: 🧩 Checkout main repo
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          token: ${{ secrets.FBF_PAT }}
 
-      - name: Install dependencies
+      - name: 🔍 Debug – Confirm token visibility
         run: |
-          python -m pip install --upgrade pip
-          pip install requests openai beautifulsoup4
-
-      - name: Sync and combine transcripts
-        run: |
-          echo "📡 Fetching transcript text files..."
-          mkdir -p transcripts_fetched
-          find . -type f -name "*.txt" -not -path "./transcripts_fetched/*" -exec cp {} transcripts_fetched/ \;
-          echo "✅ Found transcript files:"
-          ls -l transcripts_fetched || echo "⚠️ None found."
-
-          echo "📘 Combining transcripts..."
-          mkdir -p build_output
-          if ls transcripts_fetched/*.txt 1> /dev/null 2>&1; then
-            cat transcripts_fetched/*.txt > build_output/master_transcript_combined.txt
-            echo "✅ Combined transcript file built."
-          else
-            echo "⚠️ No transcript files to combine."
+          if [ -z "$GH_PAT" ]; then
+            echo "❌ TOKEN MISSING — Check your Actions secret 'FBF_PAT'"
+            exit 1
           fi
+          echo "✅ Token found and loaded in runner environment (value hidden)."
 
-      - name: Commit and push updates
+      - name: 🧰 Configure Git global auth helper
         run: |
-          echo "💾 Committing updates..."
+          echo "machine github.com login $GH_USER password $GH_PAT" > ~/.netrc
+          chmod 600 ~/.netrc
+          git config --global credential.helper store
+          echo "✅ Git credential helper configured."
+
+      - name: 📦 Clone thinkbig-transcripts repo
+        run: |
+          echo "📦 Cloning thinkbig-transcripts..."
+          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts || {
+            echo "❌ Clone failed — dumping git config for debug:"
+            git config --list
+            exit 1
+          }
+          echo "✅ Clone successful!"
+          ls -lah /tmp/thinkbig-transcripts | head
+
+      - name: 🧠 Combine transcript files
+        run: |
+          mkdir -p transcripts
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
+          echo "✅ Combined transcripts into master_transcript.txt"
+          wc -l transcripts/master_transcript.txt || echo "⚠️ No transcript data found."
+
+      - name: 🗂️ Commit and push updates
+        run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          mkdir -p transcripts
-          if [ -f build_output/master_transcript_combined.txt ]; then
-            cp build_output/master_transcript_combined.txt transcripts/master_transcript_combined.txt
-            git add transcripts/master_transcript_combined.txt
-            git commit -m "Auto rebuild transcripts [skip ci]" || echo "ℹ️ No changes."
+          if [ -s transcripts/master_transcript.txt ]; then
+            git add transcripts/master_transcript.txt
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes to commit."
             git push origin main
+            echo "✅ Master transcript pushed to main."
+          else
+            echo "⚠️ No transcript file to push."
           fi
 
-      - name: Upload to OpenAI
-        env:
-          OPENAI_API_KEY: ${{ github.token }}
-        run: |
-          echo "📤 Preparing upload..."
-          if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "⚠️ Missing OpenAI API key — skipping upload."
-            exit 0
-          fi
-
-          python3 - <<'PYCODE'
-          import os
-          from openai import OpenAI
-
-          key = os.getenv("OPENAI_API_KEY")
-          if not key:
-              print("⚠️ No API key detected — skipping.")
-              raise SystemExit(0)
-
-          client = OpenAI(api_key=key)
-          path = "transcripts/master_transcript_combined.txt"
-
-          if os.path.exists(path):
-              with open(path, "rb") as f:
-                  client.files.create(file=f, purpose="assistants")
-              print("✅ Upload complete.")
-          else:
-              print("⚠️ No transcript to upload.")
-          PYCODE
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: master_transcript
+          path: transcripts/master_transcript.txt
