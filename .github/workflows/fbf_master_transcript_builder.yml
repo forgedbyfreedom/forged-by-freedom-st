@@ -1,9 +1,9 @@
-name: Build and Upload Master Transcripts (Fixed Auth)
+name: Build and Upload Master Transcripts (Final Inline Auth Fix)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # Daily 6 AM UTC
+    - cron: "0 6 * * *"  # Run daily at 6 AM UTC
 
 permissions:
   contents: write
@@ -12,61 +12,57 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.FBF_PAT }}
+      GH_USER: forgedbyfreedom
+      GH_PAT: ${{ secrets.FBF_PAT }}
 
     steps:
       - name: 🧩 Checkout main repo (forged-by-freedom-st)
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup Git identity
+      - name: 🔧 Configure Git identity
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 🔐 Verify token setup
+      - name: 🔐 Verify token
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "❌ Token missing! Please add FBF_PAT in repo secrets."
+          if [ -z "$GH_PAT" ]; then
+            echo "❌ Missing token secret (FBF_PAT)."
             exit 1
           else
-            echo "✅ Token length check:"
-            echo "$GH_TOKEN" | wc -c
+            echo "✅ Token present. Length:"
+            echo "$GH_PAT" | wc -c
           fi
 
-      - name: ⚙️ Inject credentials for same-account access
-        run: |
-          echo "machine github.com login forgedbyfreedom password $GH_TOKEN" > ~/.netrc
-          chmod 600 ~/.netrc
-          git config --global credential.helper store
-          echo "✅ Credential injection complete"
-          cat ~/.netrc | sed 's/password.*/password ********/'
-
-      - name: 📦 Clone thinkbig-transcripts repo (authenticated)
+      - name: 📦 Clone thinkbig-transcripts (authenticated)
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
-          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts
-          echo "✅ Clone complete"
+          git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts || (
+            echo "⚠️ Retry clone..." && sleep 5 &&
+            git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts
+          )
+          echo "✅ thinkbig-transcripts cloned successfully."
           ls -lah /tmp/thinkbig-transcripts | head
 
-      - name: 🧠 Combine transcripts into master file
+      - name: 🧠 Build master transcript
         run: |
           mkdir -p transcripts
           find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
-          echo "✅ Master transcript built"
-          wc -l transcripts/master_transcript.txt || echo "⚠️ No transcript lines found"
+          echo "✅ Master transcript built."
+          wc -l transcripts/master_transcript.txt || echo "⚠️ Empty transcript file."
 
-      - name: 🗂️ Commit and push updates
+      - name: 🗂️ Commit and push master transcript
         run: |
           if [ -s transcripts/master_transcript.txt ]; then
             git add transcripts/master_transcript.txt
-            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes"
+            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes."
             git push origin main
-            echo "✅ Changes pushed"
+            echo "✅ Master transcript pushed to main."
           else
-            echo "⚠️ No transcript data found — skipping commit"
+            echo "⚠️ No content — skipping commit."
           fi
 
-      - name: 📤 Upload master transcript artifact
+      - name: 📤 Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: master_transcript
