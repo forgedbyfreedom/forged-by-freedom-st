@@ -3,7 +3,7 @@ name: Build and Upload Master Transcripts
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # runs daily at 6 AM UTC
+    - cron: "0 6 * * *"  # Daily at 6 AM UTC
 
 permissions:
   contents: write
@@ -13,21 +13,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout main repo
+      - name: 🧩 Checkout FBF main repo
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup Git credentials
+      - name: 🔧 Setup Git identity
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 📦 Clone thinkbig-transcripts repo
+      - name: 📦 Clone thinkbig-transcripts repo (using PAT)
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ secrets.FBF_PAT }}
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
           git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
-            echo "❌ Clone failed on first try, retrying in 10 seconds..." && sleep 10 &&
+            echo "❌ Clone failed, retrying..." && sleep 10 &&
             git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
           )
           echo "✅ Clone complete."
@@ -52,7 +52,7 @@ jobs:
             echo "⚠️ No transcript data found — skipping commit."
           fi
 
-      - name: 📤 Upload transcript artifact
+      - name: 📤 Upload master transcript artifact
         uses: actions/upload-artifact@v4
         with:
           name: master_transcript
