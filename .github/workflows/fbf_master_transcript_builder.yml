@@ -1,4 +1,4 @@
-name: Build and Upload Master Transcripts
+name: Build and Upload Master Transcripts (Dual Repo)
 
 on:
   workflow_dispatch:
@@ -30,26 +30,26 @@ jobs:
             echo "${{ secrets.FBF_PAT }}" | wc -c
           fi
 
-      - name: 📦 Clone thinkbig-transcripts repo (with PAT + fallback)
+      - name: 🔐 Inject PAT into Git credential helper
+        run: |
+          echo "🔐 Configuring Git credentials for thinkbig-transcripts..."
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.FBF_PAT }}@github.com" > ~/.git-credentials
+          cat ~/.git-credentials | sed 's/.\{10\}$/********/' || true
+          echo "✅ Git credentials injected."
+
+      - name: 📦 Clone thinkbig-transcripts repo (using stored creds)
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
-
-          if [ -n "${{ secrets.FBF_PAT }}" ]; then
-            echo "🔑 Using Personal Access Token (FBF_PAT)"
-            git clone https://x-access-token:${{ secrets.FBF_PAT }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
-              echo "⚠️ First attempt failed, retrying..." && sleep 10 &&
-              git clone https://x-access-token:${{ secrets.FBF_PAT }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
-            )
-          else
-            echo "⚠️ Falling back to default GITHUB_TOKEN..."
-            git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
-          fi
+          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
+            echo "⚠️ Clone failed, retrying..." && sleep 10 &&
+            git clone https://github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
+          )
 
           if [ ! -d "/tmp/thinkbig-transcripts" ]; then
             echo "❌ Failed to clone thinkbig-transcripts after retries."
             exit 1
           fi
-
           echo "✅ Clone complete."
           ls -lah /tmp/thinkbig-transcripts | head
 
