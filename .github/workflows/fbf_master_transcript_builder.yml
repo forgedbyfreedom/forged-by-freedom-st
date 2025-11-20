@@ -3,7 +3,7 @@ name: Build and Upload Master Transcripts
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # Daily at 6 AM UTC
+    - cron: "0 6 * * *"  # Runs daily at 6 AM UTC
 
 permissions:
   contents: write
@@ -21,25 +21,44 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 📦 Clone thinkbig-transcripts repo (using PAT)
-        env:
-          TOKEN: ${{ secrets.FBF_PAT }}
+      - name: 🔍 Debug token visibility
+        run: |
+          if [ -z "${{ secrets.FBF_PAT }}" ]; then
+            echo "❌ FBF_PAT secret not found or empty!"
+          else
+            echo "✅ FBF_PAT exists (length check):"
+            echo "${{ secrets.FBF_PAT }}" | wc -c
+          fi
+
+      - name: 📦 Clone thinkbig-transcripts repo (with PAT + fallback)
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
-          git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
-            echo "❌ Clone failed, retrying..." && sleep 10 &&
-            git clone https://x-access-token:${TOKEN}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
-          )
+
+          if [ -n "${{ secrets.FBF_PAT }}" ]; then
+            echo "🔑 Using Personal Access Token (FBF_PAT)"
+            git clone https://x-access-token:${{ secrets.FBF_PAT }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts || (
+              echo "⚠️ First attempt failed, retrying..." && sleep 10 &&
+              git clone https://x-access-token:${{ secrets.FBF_PAT }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
+            )
+          else
+            echo "⚠️ Falling back to default GITHUB_TOKEN..."
+            git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
+          fi
+
+          if [ ! -d "/tmp/thinkbig-transcripts" ]; then
+            echo "❌ Failed to clone thinkbig-transcripts after retries."
+            exit 1
+          fi
+
           echo "✅ Clone complete."
           ls -lah /tmp/thinkbig-transcripts | head
 
       - name: 🧠 Combine transcripts into master file
         run: |
           mkdir -p transcripts
-          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
           echo "✅ Master transcript built."
-          echo "📏 Line count:"
-          wc -l transcripts/master_transcript.txt
+          wc -l transcripts/master_transcript.txt || echo "⚠️ No transcript lines found."
 
       - name: 🗂️ Commit and push transcript updates
         run: |
