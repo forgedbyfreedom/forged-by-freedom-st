@@ -1,9 +1,9 @@
-name: Build and Upload Master Transcripts (Classic PAT Auth)
+name: Build and Upload Master Transcripts (Dual Repo, Final Fix)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * *"  # Run daily at 6 AM UTC
+    - cron: "0 6 * * *"  # daily at 6 AM UTC
 
 permissions:
   contents: write
@@ -13,39 +13,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_USER: forgedbyfreedom
-      GH_PAT: ${{ secrets.FBF_PAT }}
 
     steps:
-      - name: 🧩 Checkout main repo
+      - name: 🧩 Checkout main repo (forged-by-freedom-st)
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FBF_PAT }}
+
+      - name: 📦 Checkout thinkbig-transcripts repo
+        uses: actions/checkout@v4
+        with:
+          repository: forgedbyfreedom/thinkbig-transcripts
+          token: ${{ secrets.FBF_PAT }}
+          path: thinkbig-transcripts
 
       - name: 🔧 Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 🔐 Validate token
-        run: |
-          if [ -z "$GH_PAT" ]; then
-            echo "❌ No token found in secrets."
-            exit 1
-          fi
-          echo "✅ Token present. Length: $(echo $GH_PAT | wc -c)"
-
-      - name: 📦 Clone thinkbig-transcripts (Classic PAT)
-        run: |
-          echo "📦 Cloning thinkbig-transcripts with classic token..."
-          git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts || (
-            echo "⚠️ Retry cloning..." && sleep 5 &&
-            git clone https://$GH_USER:$GH_PAT@github.com/$GH_USER/thinkbig-transcripts.git /tmp/thinkbig-transcripts
-          )
-          echo "✅ Clone successful."
-          ls -lah /tmp/thinkbig-transcripts | head
-
-      - name: 🧠 Combine transcripts
+      - name: 🧠 Combine transcript files
         run: |
           mkdir -p transcripts
-          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
+          find thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt || true
           echo "✅ Master transcript built."
           wc -l transcripts/master_transcript.txt || echo "⚠️ Empty transcript file."
 
@@ -53,14 +43,14 @@ jobs:
         run: |
           if [ -s transcripts/master_transcript.txt ]; then
             git add transcripts/master_transcript.txt
-            git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes."
+            git commit -m "Auto rebuild master transcript [skip ci]" || echo "No changes."
             git push origin main
             echo "✅ Master transcript pushed to main."
           else
             echo "⚠️ No content found — skipping commit."
           fi
 
-      - name: 📤 Upload artifact
+      - name: 📤 Upload transcript artifact
         uses: actions/upload-artifact@v4
         with:
           name: master_transcript
