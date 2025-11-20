@@ -1,73 +1,43 @@
-name: Build and Upload Master Transcripts (Dual Repo)
+name: Build and Upload Master Transcripts
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - "transcripts/**"
-      - ".github/workflows/fbf_master_transcript_builder.yml"
+  workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # every 6 hours
+    - cron: "0 6 * * *"  # runs daily at 6 AM UTC
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     steps:
-      - name: Checkout main repo (forged-by-freedom-st)
+      - name: 📥 Checkout current repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Clone thinkbig-transcripts repo
+      - name: 📦 Clone thinkbig-transcripts repo
         run: |
           echo "📦 Cloning thinkbig-transcripts..."
-          git clone https://github.com/forgedbyfreedom/thinkbig-transcripts.git /tmp/thinkbig-transcripts
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/forgedbyfreedom/thinkbig-transcripts /tmp/thinkbig-transcripts
+          echo "✅ Clone complete."
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: 🧩 Combine transcripts into master file
+        run: |
+          mkdir -p transcripts
+          find /tmp/thinkbig-transcripts -type f -name "*.txt" -print0 | xargs -0 cat > transcripts/master_transcript.txt
+          echo "🧾 Master transcript built with $(wc -l < transcripts/master_transcript.txt) lines."
+
+      - name: 🗂️ Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add transcripts/master_transcript.txt
+          git commit -m "Auto rebuild transcripts [skip ci]" || echo "No changes to commit."
+          git push origin main
+
+      - name: 📤 Upload master transcript artifact
+        uses: actions/upload-artifact@v4
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests openai beautifulsoup4
-
-      - name: Combine transcripts from both repos
-        run: |
-          echo "📘 Combining transcripts..."
-          mkdir -p build
-          find transcripts -type f -name "*.txt" > /tmp/list_main.txt
-          find /tmp/thinkbig-transcripts -type f -name "*.txt" > /tmp/list_thinkbig.txt
-          cat /tmp/list_main.txt /tmp/list_thinkbig.txt > /tmp/all_files.txt
-          cat $(cat /tmp/all_files.txt) > build/master_transcript.txt
-          echo "✅ Combined $(wc -l < /tmp/all_files.txt) transcript files total."
-          wc -c build/master_transcript.txt
-
-      - name: Upload to OpenAI
-        run: |
-          echo "📤 Uploading master_transcript.txt..."
-          python - <<'EOF'
-          import os, openai
-          key = os.getenv("OPENAI_API_KEY")
-          if not key:
-              raise ValueError("❌ Missing OpenAI API Key in Secrets.")
-          client = openai.OpenAI(api_key=key)
-          file_path = "build/master_transcript.txt"
-          with open(file_path, "rb") as f:
-              resp = client.files.create(file=f, purpose="assistants")
-          print("✅ Upload complete:", resp.id)
-          EOF
-
-      - name: Commit combined transcript
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add build/master_transcript.txt
-          git commit -m "Auto rebuild master transcript [skip ci]" || echo "No changes"
-          git push origin main || echo "No push needed"
+          name: master_transcript
+          path: transcripts/master_transcript.txt
