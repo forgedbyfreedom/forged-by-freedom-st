@@ -1,46 +1,43 @@
 #!/usr/bin/env python3
 """
-sync_openai_to_wix_assistant.py
+sync_local_transcripts_to_wix.py
 ---------------------------------
-Downloads transcript files from OpenAI (purpose=user_data or fine-tune)
-and syncs them to Wix CMS ("ForgedByFreedom_KB").
-
-If OpenAI download fails, it falls back to local transcript files.
+Uploads all transcript files from the local `transcripts/` folder
+to your Wix CMS ("ForgedByFreedom_KB").
 
 Requirements:
-  pip install openai requests
+  pip install requests
 Environment:
-  export OPENAI_API_KEY="..."
   export WIX_API_KEY="..."
   export WIX_SITE_ID="..."
 """
 
 import os
-import time
 import requests
-from openai import OpenAI
 
 # ========================
 # 🔧 Configuration
 # ========================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WIX_API_KEY = os.getenv("WIX_API_KEY")
 WIX_SITE_ID = os.getenv("WIX_SITE_ID")
 
-if not OPENAI_API_KEY:
-    raise ValueError("❌ Missing OPENAI_API_KEY.")
 if not WIX_API_KEY:
     raise ValueError("❌ Missing WIX_API_KEY.")
 if not WIX_SITE_ID:
     raise ValueError("❌ Missing WIX_SITE_ID.")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
 TRANSCRIPT_DIR = os.path.expanduser("~/forged-by-freedom-st/transcripts")
-os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
+FAILED_DIR = os.path.join(TRANSCRIPT_DIR, "failed_syncs")
+
+os.makedirs(FAILED_DIR, exist_ok=True)
+
+print(f"📂 Scanning folder: {TRANSCRIPT_DIR}")
+if not os.path.isdir(TRANSCRIPT_DIR):
+    raise FileNotFoundError(f"❌ Folder not found: {TRANSCRIPT_DIR}")
 
 
 # ========================
-# ⚙️ Helper: push to Wix
+# ⚙️ Helper: upload to Wix
 # ========================
 def push_to_wix(filename: str, content: str):
     """Uploads transcript text to Wix CMS."""
@@ -60,72 +57,39 @@ def push_to_wix(filename: str, content: str):
 
     print(f"⬆️ Uploading {filename} to Wix...")
     res = requests.post(url, json=data, headers=headers)
+
     if res.status_code == 200:
         print(f"✅ Uploaded {filename} successfully.")
     else:
         print(f"⚠️ Wix upload failed ({res.status_code}): {res.text}")
-        os.makedirs("failed_syncs", exist_ok=True)
-        with open(f"failed_syncs/{filename}.txt", "w") as f:
+        failed_path = os.path.join(FAILED_DIR, f"{filename}.txt")
+        with open(failed_path, "w") as f:
             f.write(content)
 
 
 # ========================
-# 💾 Download helper
+# 🚀 Main Logic
 # ========================
-def download_openai_file(file_obj):
-    """Downloads an OpenAI file locally and returns its path."""
-    print(f"⏬ Attempting to download {file_obj.filename} ({file_obj.id})...")
+txt_files = [f for f in os.listdir(TRANSCRIPT_DIR) if f.endswith(".txt")]
+print(f"🧾 Found {len(txt_files)} .txt files to upload.\n")
 
-    try:
-        response = client.files.content(file_obj.id)
-        file_path = os.path.join(TRANSCRIPT_DIR, file_obj.filename)
-        with open(file_path, "wb") as f:
-            f.write(response.read())
-        print(f"✅ Saved locally to {file_path}")
-        return file_path
-    except Exception as e:
-        print(f"⚠️ Could not download from OpenAI: {e}")
-        local_path = os.path.join(TRANSCRIPT_DIR, file_obj.filename)
-        if os.path.exists(local_path):
-            print(f"📂 Using local fallback: {local_path}")
-            return local_path
-        else:
-            print(f"❌ No local backup found for {file_obj.filename}. Skipping.")
-            return None
-
-
-# ========================
-# 🚀 Main Sync Logic
-# ========================
-print("🔍 Listing OpenAI user_data and fine-tune files...")
-files = [f for f in client.files.list().data if f.purpose in ["user_data", "fine-tune"]]
-print(f"📁 Found {len(files)} eligible file(s).")
-
-if not files:
-    print("❌ No files found in OpenAI. Exiting.")
+if not txt_files:
+    print("❌ No transcript files found. Exiting.")
     exit(1)
 
-for f in files:
-    print(f"\n⏳ Processing {f.filename} ({f.id})...")
-
-    # 1️⃣ Download locally
-    file_path = download_openai_file(f)
-    if not file_path:
-        continue
-
-    # 2️⃣ Read content
+for filename in txt_files:
+    file_path = os.path.join(TRANSCRIPT_DIR, filename)
     try:
-        with open(file_path, "r", encoding="utf-8") as fp:
-            content = fp.read().strip()
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
     except Exception as e:
-        print(f"❌ Error reading local file {file_path}: {e}")
+        print(f"❌ Error reading {filename}: {e}")
         continue
 
     if not content:
-        print(f"⚠️ File {f.filename} is empty. Skipping.")
+        print(f"⚠️ Skipping empty file: {filename}")
         continue
 
-    # 3️⃣ Upload to Wix
-    push_to_wix(f.filename, content)
+    push_to_wix(filename, content)
 
-print("\n🎉 Done! All transcripts synced to Wix successfully.")
+print("\n🎉 Done! All transcripts uploaded to Wix.")
