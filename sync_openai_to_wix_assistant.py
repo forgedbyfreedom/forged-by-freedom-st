@@ -3,7 +3,7 @@
 sync_openai_to_wix_assistant.py
 ---------------------------------
 Syncs text transcripts stored in OpenAI File Storage (purpose=user_data or fine-tune)
-to a Wix CMS Collection ("ForgedByFreedom_KB") using the Assistant API for retrieval.
+to a Wix CMS Collection ("ForgedByFreedom_KB") using the Assistant API (file_search tool).
 
 Requirements:
   pip install openai requests python-dotenv
@@ -86,5 +86,53 @@ for f in files:
 
     try:
         # 🧠 Create Assistant
-        assistant =
+        assistant = client.beta.assistants.create(
+            name="Transcript Retriever",
+            instructions=f"Read and return the full contents of the file '{f.filename}'.",
+            model="gpt-4.1-mini",
+            tools=[{"type": "file_search"}]
+        )
 
+        # 📎 Attach file to assistant
+        client.beta.assistants.files.create(
+            assistant_id=assistant.id,
+            file_id=f.id
+        )
+
+        # 🧵 Create a thread
+        thread = client.beta.threads.create()
+
+        # ▶️ Run the assistant
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id,
+            instructions=f"Retrieve and print the contents of '{f.filename}'."
+        )
+
+        # ⏱ Wait for completion
+        while True:
+            run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run_status.status == "completed":
+                break
+            elif run_status.status == "failed":
+                raise Exception("Assistant run failed.")
+            time.sleep(2)
+
+        # 💬 Get output
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        if not messages.data or not messages.data[0].content:
+            print(f"⚠️ No content retrieved from {f.filename}. Skipping.")
+            continue
+
+        content = messages.data[0].content[0].text.value.strip()
+        if not content:
+            print(f"⚠️ File {f.filename} returned empty content.")
+            continue
+
+        # 🚀 Upload to Wix
+        push_to_wix(f.filename, content)
+
+    except Exception as e:
+        print(f"❌ Error syncing {f.filename}: {e}")
+
+print("\n🎉 Done! All transcripts processed successfully.")
